@@ -13,7 +13,14 @@ local Drawing = loadstring(game:HttpGet("https://raw.githubusercontent.com/Roblo
 local settings = {
     guiColor = Color3.fromRGB(255, 100, 100),
     fontSize = 16,
-    thirdPersonDistance = 10
+    thirdPersonDistance = 10,
+    worldColor = Color3.fromRGB(255, 255, 255), -- Цвет объектов мира
+    ambientColor = Color3.fromRGB(128, 128, 128), -- Ambient
+    brightness = 1, -- Яркость
+    fogStart = 0, -- Начало тумана
+    fogEnd = 1000, -- Конец тумана
+    antiAimSpeed = 1, -- Скорость Anti-Aim
+    antiAimOffset = 0 -- Смещение Anti-Aim
 }
 
 -- Флаги и переменные
@@ -61,10 +68,11 @@ local defaultCameraOffset = Vector3.new(0, 0, 0)
 local addons = {}
 local lastJumpTime = 0
 local jumpCooldown = 0.2
-local antiAimYaw = "Spin" -- Spin, Static, Jitter
-local antiAimPitch = "Down" -- Up, Down, Random
+local antiAimYaw = "Spin" -- Spin, Static, Jitter, FakeLag, Reverse
+local antiAimPitch = "Down" -- Up, Down, Random, JitterPitch, FakeUp
 local antiAimRandom = true
 local antiAimSpeed = 1
+local antiAimOffset = 0
 
 -- Drawing API для незакрашенного FOV-круга
 local fovCircleDrawing = Drawing.new("Circle")
@@ -73,12 +81,12 @@ fovCircleDrawing.Radius = aimbotFOV
 fovCircleDrawing.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 fovCircleDrawing.Thickness = 2
 fovCircleDrawing.Color = settings.guiColor
-fovCircleDrawing.Filled = false -- Незакрашенный круг
+fovCircleDrawing.Filled = false
 fovCircleDrawing.Transparency = 0.8
 
 ------------------------ СОЗДАНИЕ GUI ------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CheatGUI"
+ScreenGui.Name = "FelWareGUI"
 ScreenGui.Parent = game.CoreGui
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Enabled = false
@@ -117,7 +125,7 @@ local TitleLabel = Instance.new("TextLabel", MainFrame)
 TitleLabel.Size = UDim2.new(1, 0, 0, 50)
 TitleLabel.Position = UDim2.new(0, 0, 0, 5)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "Arsenal Elite GUI"
+TitleLabel.Text = "FelWare"
 TitleLabel.TextColor3 = settings.guiColor
 TitleLabel.Font = Enum.Font.GothamBlack
 TitleLabel.TextSize = 28
@@ -185,16 +193,19 @@ miscFrame.Name = "MiscFrame"
 miscFrame.Size = UDim2.new(1, -20, 1, -120)
 miscFrame.Position = UDim2.new(0, 10, 0, 110)
 miscFrame.BackgroundTransparency = 1
-miscFrame.CanvasSize = UDim2.new(0, 0, 0, 1400) -- Увеличено для новых функций
+miscFrame.CanvasSize = UDim2.new(0, 0, 0, 1400)
 miscFrame.ScrollBarThickness = 8
 miscFrame.ScrollBarImageColor3 = settings.guiColor
 miscFrame.Visible = false
 
-local settingsFrame = Instance.new("Frame", MainFrame)
+local settingsFrame = Instance.new("ScrollingFrame", MainFrame)
 settingsFrame.Name = "SettingsFrame"
 settingsFrame.Size = UDim2.new(1, -20, 1, -120)
 settingsFrame.Position = UDim2.new(0, 10, 0, 110)
 settingsFrame.BackgroundTransparency = 1
+settingsFrame.CanvasSize = UDim2.new(0, 0, 0, 800)
+settingsFrame.ScrollBarThickness = 8
+settingsFrame.ScrollBarImageColor3 = settings.guiColor
 settingsFrame.Visible = false
 
 local function addListLayout(parent)
@@ -270,6 +281,7 @@ local antiAimYawButton = createSettingButton(miscFrame, "Anti-Aim Yaw: Spin")
 local antiAimPitchButton = createSettingButton(miscFrame, "Anti-Aim Pitch: Down")
 local antiAimRandomToggleButton = createSettingButton(miscFrame, "Anti-Aim Random: ON")
 local antiAimSpeedButton = createSettingButton(miscFrame, "Anti-Aim Speed: 1")
+local antiAimOffsetButton = createSettingButton(miscFrame, "Anti-Aim Offset: 0")
 local wallbangToggleButton = createSettingButton(miscFrame, "Wallbang: OFF")
 local noRecoilToggleButton = createSettingButton(miscFrame, "No Recoil: OFF")
 local flyToggleButton = createSettingButton(miscFrame, "Fly: OFF")
@@ -292,6 +304,11 @@ local crashServerToggleButton = createSettingButton(miscFrame, "[Rage] Crash Ser
 local guiColorButton = createSettingButton(settingsFrame, "GUI Color: Red")
 local fontSizeButton = createSettingButton(settingsFrame, "Font Size: " .. settings.fontSize)
 local thirdPersonDistButton = createSettingButton(settingsFrame, "Third Person Distance: " .. settings.thirdPersonDistance)
+local worldColorButton = createSettingButton(settingsFrame, "World Color: White")
+local ambientColorButton = createSettingButton(settingsFrame, "Ambient: Gray")
+local brightnessButton = createSettingButton(settingsFrame, "Brightness: 1")
+local fogStartButton = createSettingButton(settingsFrame, "Fog Start: 0")
+local fogEndButton = createSettingButton(settingsFrame, "Fog End: 1000")
 
 -- Анимация GUI
 local openTween = TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 450, 0, 500)})
@@ -302,7 +319,6 @@ closeButton.MouseButton1Click:Connect(function()
     ScreenGui.Enabled = false
 end)
 
--- Горячая клавиша для открытия/закрытия GUI (функции не отключаются)
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Insert then
         if ScreenGui.Enabled then
@@ -343,7 +359,6 @@ settingsTabButton.MouseButton1Click:Connect(function()
 end)
 
 ------------------------ ОБРАБОТЧИКИ GUI ------------------------
--- ESP вкладка
 espToggleButton.MouseButton1Click:Connect(function()
     espEnabled = not espEnabled
     espToggleButton.Text = "ESP: " .. (espEnabled and "ON" or "OFF") .. " (E)"
@@ -401,7 +416,6 @@ tracerToggleButton.MouseButton1Click:Connect(function()
     if tracerEnabled and addons["TracerESP"] then addons["TracerESP"]() end
 end)
 
--- Aimbot вкладка
 aimbotToggleButton.MouseButton1Click:Connect(function()
     aimbotEnabled = not aimbotEnabled
     aimbotToggleButton.Text = "Aimbot: " .. (aimbotEnabled and "ON" or "OFF") .. " (Q)"
@@ -461,7 +475,6 @@ silentAimToggleButton.MouseButton1Click:Connect(function()
     silentAimToggleButton.Text = "Silent Aim: " .. (silentAimEnabled and "ON" or "OFF")
 end)
 
--- Misc вкладка
 crosshairToggleButton.MouseButton1Click:Connect(function()
     crosshairEnabled = not crosshairEnabled
     crosshairToggleButton.Text = "Crosshair: " .. (crosshairEnabled and "ON" or "OFF")
@@ -518,6 +531,10 @@ antiAimYawButton.MouseButton1Click:Connect(function()
         antiAimYaw = "Static"
     elseif antiAimYaw == "Static" then
         antiAimYaw = "Jitter"
+    elseif antiAimYaw == "Jitter" then
+        antiAimYaw = "FakeLag"
+    elseif antiAimYaw == "FakeLag" then
+        antiAimYaw = "Reverse"
     else
         antiAimYaw = "Spin"
     end
@@ -529,6 +546,10 @@ antiAimPitchButton.MouseButton1Click:Connect(function()
         antiAimPitch = "Up"
     elseif antiAimPitch == "Up" then
         antiAimPitch = "Random"
+    elseif antiAimPitch == "Random" then
+        antiAimPitch = "JitterPitch"
+    elseif antiAimPitch == "JitterPitch" then
+        antiAimPitch = "FakeUp"
     else
         antiAimPitch = "Down"
     end
@@ -542,8 +563,14 @@ end)
 
 antiAimSpeedButton.MouseButton1Click:Connect(function()
     antiAimSpeed = antiAimSpeed + 0.5
-    if antiAimSpeed > 3 then antiAimSpeed = 0.5 end
+    if antiAimSpeed > 5 then antiAimSpeed = 0.5 end
     antiAimSpeedButton.Text = "Anti-Aim Speed: " .. antiAimSpeed
+end)
+
+antiAimOffsetButton.MouseButton1Click:Connect(function()
+    antiAimOffset = antiAimOffset + 10
+    if antiAimOffset > 90 then antiAimOffset = -90 end
+    antiAimOffsetButton.Text = "Anti-Aim Offset: " .. antiAimOffset
 end)
 
 wallbangToggleButton.MouseButton1Click:Connect(function()
@@ -654,7 +681,6 @@ bulletTracerToggleButton.MouseButton1Click:Connect(function()
     bulletTracerToggleButton.Text = "Bullet Tracer: " .. (bulletTracerEnabled and "ON" or "OFF")
 end)
 
--- Rage и Legit функции
 rageKillAuraToggleButton.MouseButton1Click:Connect(function()
     killAuraEnabled = not killAuraEnabled
     rageKillAuraToggleButton.Text = "[Rage] Kill Aura: " .. (killAuraEnabled and "ON" or "OFF")
@@ -695,19 +721,19 @@ crashServerToggleButton.MouseButton1Click:Connect(function()
     crashServerToggleButton.Text = "[Rage] Crash Server: " .. (crashServerEnabled and "ON" or "OFF")
 end)
 
--- Settings вкладка
-local guiColorPresets = {
-    {name = "Red", color = Color3.fromRGB(255, 100, 100)},
-    {name = "Blue", color = Color3.fromRGB(100, 100, 255)},
-    {name = "Green", color = Color3.fromRGB(100, 255, 100)}
-}
-local guiColorIndex = 1
 guiColorButton.MouseButton1Click:Connect(function()
+    local guiColorPresets = {
+        {name = "Red", color = Color3.fromRGB(255, 100, 100)},
+        {name = "Blue", color = Color3.fromRGB(100, 100, 255)},
+        {name = "Green", color = Color3.fromRGB(100, 255, 100)},
+        {name = "Purple", color = Color3.fromRGB(150, 0, 255)}
+    }
     guiColorIndex = (guiColorIndex % #guiColorPresets) + 1
     settings.guiColor = guiColorPresets[guiColorIndex].color
     guiColorButton.Text = "GUI Color: " .. guiColorPresets[guiColorIndex].name
     MainStroke.Color = settings.guiColor
     miscFrame.ScrollBarImageColor3 = settings.guiColor
+    settingsFrame.ScrollBarImageColor3 = settings.guiColor
     fovCircleDrawing.Color = settings.guiColor
     for _, frame in pairs({espFrame, aimbotFrame, miscFrame, settingsFrame}) do
         for _, btn in pairs(frame:GetChildren()) do
@@ -736,6 +762,59 @@ thirdPersonDistButton.MouseButton1Click:Connect(function()
     settings.thirdPersonDistance = settings.thirdPersonDistance + 2
     if settings.thirdPersonDistance > 20 then settings.thirdPersonDistance = 5 end
     thirdPersonDistButton.Text = "Third Person Distance: " .. settings.thirdPersonDistance
+end)
+
+worldColorButton.MouseButton1Click:Connect(function()
+    local worldColorPresets = {
+        {name = "White", color = Color3.fromRGB(255, 255, 255)},
+        {name = "Red", color = Color3.fromRGB(255, 0, 0)},
+        {name = "Blue", color = Color3.fromRGB(0, 0, 255)},
+        {name = "Green", color = Color3.fromRGB(0, 255, 0)},
+        {name = "Purple", color = Color3.fromRGB(150, 0, 255)}
+    }
+    worldColorIndex = (worldColorIndex % #worldColorPresets) + 1
+    settings.worldColor = worldColorPresets[worldColorIndex].color
+    worldColorButton.Text = "World Color: " .. worldColorPresets[worldColorIndex].name
+    for _, part in pairs(game.Workspace:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Color = settings.worldColor
+        end
+    end
+end)
+
+ambientColorButton.MouseButton1Click:Connect(function()
+    local ambientPresets = {
+        {name = "Gray", color = Color3.fromRGB(128, 128, 128)},
+        {name = "Dark", color = Color3.fromRGB(50, 50, 50)},
+        {name = "Bright", color = Color3.fromRGB(200, 200, 200)},
+        {name = "Purple", color = Color3.fromRGB(150, 0, 150)},
+        {name = "Neon", color = Color3.fromRGB(0, 255, 255)}
+    }
+    ambientIndex = (ambientIndex % #ambientPresets) + 1
+    settings.ambientColor = ambientPresets[ambientIndex].color
+    ambientColorButton.Text = "Ambient: " .. ambientPresets[ambientIndex].name
+    Lighting.Ambient = settings.ambientColor
+end)
+
+brightnessButton.MouseButton1Click:Connect(function()
+    settings.brightness = settings.brightness + 0.5
+    if settings.brightness > 3 then settings.brightness = 0 end
+    brightnessButton.Text = "Brightness: " .. settings.brightness
+    Lighting.Brightness = settings.brightness
+end)
+
+fogStartButton.MouseButton1Click:Connect(function()
+    settings.fogStart = settings.fogStart + 50
+    if settings.fogStart > 500 then settings.fogStart = 0 end
+    fogStartButton.Text = "Fog Start: " .. settings.fogStart
+    Lighting.FogStart = settings.fogStart
+end)
+
+fogEndButton.MouseButton1Click:Connect(function()
+    settings.fogEnd = settings.fogEnd + 200
+    if settings.fogEnd > 2000 then settings.fogEnd = 200 end
+    fogEndButton.Text = "Fog End: " .. settings.fogEnd
+    Lighting.FogEnd = settings.fogEnd
 end)
 
 ------------------------ HOTKEYS ------------------------
@@ -894,11 +973,14 @@ local function updateESPForCharacter(character)
 end
 
 local function isVisible(targetPos)
+    if not wallCheckEnabled then return true end
     local origin = Camera.CFrame.Position
-    local direction = (targetPos - origin).Unit * 500
-    local ray = Ray.new(origin, direction)
-    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character})
-    return not hit or hit:IsDescendantOf(lockedTarget and lockedTarget.Parent)
+    local direction = (targetPos - origin).Unit * (targetPos - origin).Magnitude
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+    return not raycastResult or raycastResult.Instance:IsDescendantOf(lockedTarget and lockedTarget.Parent)
 end
 
 local function getTargetPart(character)
@@ -906,7 +988,7 @@ local function getTargetPart(character)
         return character:FindFirstChild("Head") or character.HumanoidRootPart
     elseif aimbotBone == "Torso" then
         return character.HumanoidRootPart
-    else -- Random
+    else
         local parts = {character:FindFirstChild("Head"), character.HumanoidRootPart}
         return parts[math.random(1, #parts)] or character.HumanoidRootPart
     end
@@ -1016,7 +1098,7 @@ local function updateSilentAim()
                 if tool:IsA("Tool") then
                     local fireEvent = tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
                     if fireEvent and fireEvent:IsA("RemoteEvent") then
-                        fireEvent:FireServer(closestEnemy.Position)
+                        fireEvent:FireServer(closestEnemy.Position + Vector3.new(math.random(-1, 1), math.random(-1, 1), math.random(-1, 1))) -- Легкая рандомизация для обхода
                     end
                 end
             end
@@ -1035,20 +1117,28 @@ local function updateAntiAim()
         if antiAimYaw == "Spin" then
             yawAngle = math.rad(t * 360) % 360
         elseif antiAimYaw == "Static" then
-            yawAngle = math.rad(90)
+            yawAngle = math.rad(90 + antiAimOffset)
         elseif antiAimYaw == "Jitter" then
-            yawAngle = math.rad(math.random(-180, 180))
+            yawAngle = math.rad(math.random(-180, 180) + antiAimOffset)
+        elseif antiAimYaw == "FakeLag" then
+            yawAngle = math.rad(math.sin(t * 10) * 90 + antiAimOffset)
+        elseif antiAimYaw == "Reverse" then
+            yawAngle = math.rad(-Camera.CFrame:ToEulerAnglesYXZ() + antiAimOffset)
         end
         if antiAimRandom then
             yawAngle = yawAngle + math.rad(math.random(-10, 10))
         end
 
         if antiAimPitch == "Up" then
-            pitchAngle = math.rad(-30)
+            pitchAngle = math.rad(-30 + antiAimOffset)
         elseif antiAimPitch == "Down" then
-            pitchAngle = math.rad(30)
+            pitchAngle = math.rad(30 + antiAimOffset)
         elseif antiAimPitch == "Random" then
-            pitchAngle = math.rad(math.random(-30, 30))
+            pitchAngle = math.rad(math.random(-30, 30) + antiAimOffset)
+        elseif antiAimPitch == "JitterPitch" then
+            pitchAngle = math.rad(math.random(-90, 90) + antiAimOffset)
+        elseif antiAimPitch == "FakeUp" then
+            pitchAngle = math.rad(-90 + math.sin(t * 5) * 45 + antiAimOffset)
         end
         if antiAimRandom then
             pitchAngle = pitchAngle + math.rad(math.random(-5, 5))
@@ -1104,13 +1194,19 @@ end
 local function updateInfiniteAmmo()
     if infiniteAmmoEnabled and LocalPlayer.Character then
         for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
-            if tool:IsA("Tool") and tool:FindFirstChild("Ammo") then
-                tool.Ammo.Value = math.huge
+            if tool:IsA("Tool") then
+                local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("Clip")
+                if ammo then
+                    ammo.Value = 9999
+                end
             end
         end
         for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if tool:IsA("Tool") and tool:FindFirstChild("Ammo") then
-                tool.Ammo.Value = math.huge
+            if tool:IsA("Tool") then
+                local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("Clip")
+                if ammo then
+                    ammo.Value = 9999
+                end
             end
         end
     end
@@ -1120,8 +1216,9 @@ local function updateFastShot()
     if fastShotEnabled and LocalPlayer.Character then
         for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
             if tool:IsA("Tool") then
-                if tool:FindFirstChild("FireRate") then
-                    tool.FireRate.Value = 0.01
+                local fireRate = tool:FindFirstChild("FireRate") or tool:FindFirstChild("Rate")
+                if fireRate then
+                    fireRate.Value = 0.01 -- Максимальная скорострельность
                 end
                 for _, anim in pairs(tool:GetDescendants()) do
                     if anim:IsA("Animation") then
@@ -1136,10 +1233,9 @@ end
 
 local function updateFastRound()
     if fastRoundEnabled then
-        for _, obj in pairs(game.Workspace:GetDescendants()) do
-            if obj:IsA("IntValue") and obj.Name == "RoundTime" then
-                obj.Value = 1
-            end
+        local roundTime = game.Workspace:FindFirstChild("RoundTime") or game.ReplicatedStorage:FindFirstChild("RoundTime")
+        if roundTime and roundTime:IsA("IntValue") then
+            roundTime.Value = 1 -- Ускорение раунда
         end
     end
 end
@@ -1147,8 +1243,9 @@ end
 local function updateAutoReload()
     if autoReloadEnabled and LocalPlayer.Character then
         for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
-            if tool:IsA("Tool") and tool:FindFirstChild("Ammo") then
-                if tool.Ammo.Value <= 0 then
+            if tool:IsA("Tool") then
+                local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("Clip")
+                if ammo and ammo.Value <= 0 then
                     local reloadEvent = tool:FindFirstChild("Reload")
                     if reloadEvent and reloadEvent:IsA("RemoteEvent") then
                         reloadEvent:FireServer()
@@ -1228,7 +1325,6 @@ local function updateBulletTracer()
     end
 end
 
--- Rage и Legit функции
 local function updateKillAura()
     if killAuraEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         local hrp = LocalPlayer.Character.HumanoidRootPart
@@ -1243,7 +1339,7 @@ local function updateKillAura()
                             if tool:IsA("Tool") then
                                 local fireEvent = tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
                                 if fireEvent and fireEvent:IsA("RemoteEvent") then
-                                    fireEvent:FireServer(targetHrp.Position)
+                                    fireEvent:FireServer(targetHrp.Position + Vector3.new(math.random(-1, 1), math.random(-1, 1), math.random(-1, 1)))
                                 end
                             end
                         end
@@ -1262,7 +1358,7 @@ local function updateRapidFire()
                 if fireEvent and fireEvent:IsA("RemoteEvent") then
                     spawn(function()
                         while rapidFireEnabled and tool:IsDescendantOf(LocalPlayer.Character) do
-                            fireEvent:FireServer(Camera.CFrame.Position + Camera.CFrame.LookVector * 100)
+                            fireEvent:FireServer(Camera.CFrame.Position + Camera.CFrame.LookVector * 100 + Vector3.new(math.random(-1, 1), math.random(-1, 1), math.random(-1, 1)))
                             wait(0.05)
                         end
                     end)
@@ -1275,8 +1371,9 @@ end
 local function updateSmoothReload()
     if smoothReloadEnabled and LocalPlayer.Character then
         for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
-            if tool:IsA("Tool") and tool:FindFirstChild("Ammo") then
-                if tool.Ammo.Value <= 0 then
+            if tool:IsA("Tool") then
+                local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("Clip")
+                if ammo and ammo.Value <= 0 then
                     local reloadEvent = tool:FindFirstChild("Reload")
                     if reloadEvent and reloadEvent:IsA("RemoteEvent") then
                         spawn(function()
@@ -1303,7 +1400,7 @@ local function updateTPKill()
                 local targetHrp = obj.Character.HumanoidRootPart
                 local humanoid = obj.Character:FindFirstChild("Humanoid")
                 if humanoid and humanoid.Health > 0 then
-                    hrp.CFrame = CFrame.new(targetHrp.Position)
+                    hrp.CFrame = CFrame.new(targetHrp.Position + Vector3.new(math.random(-2, 2), math.random(0, 2), math.random(-2, 2)))
                     for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
                         if tool:IsA("Tool") then
                             local fireEvent = tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
@@ -1312,7 +1409,7 @@ local function updateTPKill()
                             end
                         end
                     end
-                    wait(0.1) -- Задержка перед следующей телепортацией
+                    wait(0.1)
                 end
             end
         end
@@ -1330,8 +1427,8 @@ local function updateMassKill()
                         if tool:IsA("Tool") then
                             local fireEvent = tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
                             if fireEvent and fireEvent:IsA("RemoteEvent") then
-                                for i = 1, 50 do -- Спам стрельбы
-                                    fireEvent:FireServer(targetHrp.Position)
+                                for i = 1, 50 do
+                                    fireEvent:FireServer(targetHrp.Position + Vector3.new(math.random(-1, 1), math.random(-1, 1), math.random(-1, 1)))
                                 end
                             end
                         end
@@ -1350,7 +1447,7 @@ local function updateCrashServer()
                 if fireEvent and fireEvent:IsA("RemoteEvent") then
                     spawn(function()
                         while crashServerEnabled do
-                            for i = 1, 1000 do -- Спамит сервер тысячами запросов
+                            for i = 1, 1000 do
                                 fireEvent:FireServer(Vector3.new(math.random(-1000, 1000), math.random(-1000, 1000), math.random(-1000, 1000)))
                             end
                             wait()
@@ -1425,7 +1522,6 @@ RunService.RenderStepped:Connect(function(dt)
         updateMassKill()
         updateCrashServer()
         
-        -- Обновление Drawing API FOV-круга
         fovCircleDrawing.Radius = aimbotFOV
         fovCircleDrawing.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         fovCircleDrawing.Visible = fovCircleEnabled and aimbotEnabled
@@ -1450,4 +1546,4 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
-print("Cheat GUI и функции загружены! Нажми Insert для открытия/закрытия GUI.")
+print("FelWare загружен! Нажми Insert для открытия/закрытия GUI.")
