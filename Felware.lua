@@ -320,7 +320,7 @@ closeButton.MouseButton1Click:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Insert then
+    if input.KeyCode == Enum.KeyCode.N then
         if ScreenGui.Enabled then
             closeTween:Play()
             wait(0.3)
